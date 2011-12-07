@@ -118,9 +118,12 @@ public class HTSerDe implements SerDe {
    */
   public void initialize(Configuration conf, Properties tbl)
       throws SerDeException {
-
+	  
+	  
     initHTSerDeParameters(conf, tbl, getClass().getName());
-
+    //add the columns names as used in hive to the job configuration
+    conf.setStrings(Constants.LIST_COLUMNS, serdeParams.getColumnNames().toArray(new String[]{}));
+    System.out.println("Serde:"+serdeParams.getColumnNames());
     cachedObjectInspector = LazyFactory.createLazyStructInspector(
         serdeParams.getColumnNames(),
         serdeParams.getColumnTypes(),

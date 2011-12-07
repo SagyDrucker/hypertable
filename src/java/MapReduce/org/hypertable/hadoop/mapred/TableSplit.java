@@ -1,52 +1,22 @@
-/**
  * Copyright (C) 2010 Doug Judd (Hypertable, Inc.)
- *
- * This file is part of Hypertable.
- *
- * Hypertable is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or any later version.
- *
- * Hypertable is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- */
 
 package org.hypertable.hadoop.mapred;
 
 import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-
-import org.hypertable.hadoop.util.Serialization;
-
-import org.hypertable.thriftgen.*;
-
-import org.hypertable.hadoop.mapreduce.ScanSpec;
-
-import org.apache.hadoop.io.Writable;
-import org.apache.hadoop.mapred.InputSplit;
 
 /**
  * A table split corresponds to a key range (low, high). All references to row
- * below refer to the key of the row.
+ * below refer to the key of the row.<br>
  */
 public class TableSplit
 implements InputSplit,Comparable<TableSplit> {
 
-  private byte [] m_tablename;
-  private byte [] m_startrow;
-  private byte [] m_endrow;
-  private String m_hostname;
-  private ScanSpec m_scanspec;
+  protected byte [] m_tablename;
+  protected byte [] m_startrow;
+  protected byte [] m_endrow;
+  protected String m_hostname;
+  protected ScanSpec m_scanspec;
+  final Log LOG = LogFactory.getLog(TableSplit.class);
 
   /** Default constructor. */
   public TableSplit() {
@@ -136,71 +106,207 @@ implements InputSplit,Comparable<TableSplit> {
 
 
   /**
-   * Updates the ScanSpec by setting the row interval to match this split
+   * returns an instance of scanspec copied from the local field ScanSpec<br>
+   * unlike the original createScanSpec(ScanSpec base_spec) , this function does not get
+   * a scan spec as parameter, since we are using the local field m_scanspec which was previously assigned.
+   *
+   * @author Sagy Drucker (sagysrael@hotmail.com)
+   * @param scan_spec The base ScanSpec to start with
+   * @return a new scan_spec object with a row interval matching this split
+   */
+  
+  public ScanSpec createScanSpec()
+  {
+//	  LOG.info("creating scanspec instance");
+//	  LOG.info("m_scanspec row regex: " + m_scanspec.getRow_regexp());
+//	  LOG.info("m_scanspec value intervals: " + m_scanspec.getRow_intervals());
+	  
+	    ScanSpec scan_spec = new ScanSpec(m_scanspec);
+	    RowInterval interval = new RowInterval();
+
+	    scan_spec.unsetRow_intervals();
+	    
+	    	try 
+	    	{
+	    	if(m_startrow != null && m_startrow.length > 0) {
+					interval.setStart_row(new String(m_startrow, "UTF-8"));
+				interval.setStart_rowIsSet(true);
+				interval.setStart_inclusive(false);
+				interval.setStart_inclusiveIsSet(true);
+			}
+			
+			if(m_endrow != null && m_endrow.length > 0) {
+				interval.setEnd_row(new String(m_endrow,"UTF-8"));
+				interval.setEnd_rowIsSet(true);
+				interval.setEnd_inclusive(true);
+				interval.setEnd_inclusiveIsSet(true);
+			}
+			
+			if (m_scanspec.isSetRow_intervals()) {
+				for (RowInterval ri : m_scanspec.getRow_intervals()) {
+					if (ri.isSetStart_row()) {
+						if (m_startrow == null ||
+								ri.getStart_row().compareTo(new String(m_startrow, "UTF-8")) > 0) {
+							interval.setStart_row(ri.getStart_row());
+							interval.setStart_rowIsSet(true);
+							interval.setStart_inclusive( ri.isStart_inclusive() );
+							interval.setStart_inclusiveIsSet(true);
+						}
+					}
+					if (ri.isSetEnd_row()) {
+						if ( m_endrow == null || m_endrow.length == 0 ||
+								ri.getEnd_row().compareTo(new String(m_endrow,"UTF-8")) < 0)  {
+							interval.setEnd_row(ri.getEnd_row());
+							interval.setEnd_rowIsSet(true);
+							interval.setEnd_inclusive( ri.isEnd_inclusive() );
+							interval.setEnd_inclusiveIsSet(true);
+						}
+					}
+					// Only allowing a single row interval
+					break;
+				}
+			}
+	    } catch (UnsupportedEncodingException e) {
+    		e.printStackTrace();
+    	}
+	    
+	    if(interval.isSetStart_row() || interval.isSetEnd_row()) {
+	    	scan_spec.addToRow_intervals(interval);
+	    	scan_spec.setRow_intervalsIsSet(true);
+	    }
+	    
+	    if(m_scanspec.isSetRow_regexp()){
+	    	scan_spec.setRow_regexpIsSet(true);
+	    	scan_spec.setRow_regexp(m_scanspec.getRow_regexp());
+	    }
+	    	
+	    
+	    return scan_spec;
+	  }
+  
+  /**
+   * Updates the ScanSpec by setting the row interval to match this split<br>
+   * This overriding method, also checks that base_spec's intervals synchronized with scnaspec m_start/end-row, by which the table was split.<br>
+   * this prevents such as if splits: [1-3,4-8,9-10] is created, and interval is 2-7, then no need to look in the last split at all... 
    *
    * @param scan_spec The base ScanSpec to start with
    * @return a new scan_spec object with a row interval matching this split
    */
+  /*
   public ScanSpec createScanSpec(ScanSpec base_spec) {
-    ScanSpec scan_spec = new ScanSpec(base_spec);
+	  
+	  LOG.info("base_spec row regex: " + base_spec.getRow_regexp());
+	  LOG.info("base_spec value regex: " + base_spec.getValue_regexp());
+	  LOG.info("base_spec value intervals: " + base_spec.getRow_intervals());
+	  
+	    ScanSpec scan_spec = new ScanSpec(base_spec);
+	    LOG.info("before unset scan_spec row regex: " + scan_spec.getRow_regexp());
+	    LOG.info("before unset scan_spec value regex: " + scan_spec.getValue_regexp());
+	    RowInterval interval = new RowInterval();
+	    LOG.info("after unsetting scan_spec row regex: " + scan_spec.getRow_regexp());
+	    LOG.info("before unset scan_spec value regex: " + scan_spec.getValue_regexp());
 
-    RowInterval interval = new RowInterval();
+	    scan_spec.unsetRow_intervals();
+	    
+	    boolean returnEmptyScanspec = false;
+	    try {
+		    if (base_spec.isSetRow_intervals()) {
+				for (RowInterval ri : base_spec.getRow_intervals()) {	// loop on all intervals
+					
+					String mStartRow;
+						mStartRow 		 = (m_startrow==null) ? null : new String(m_startrow, "UTF-8");
+						String mEndRow 	 = (m_endrow==null) ? null : new String(m_endrow, "UTF-8");
 
-    scan_spec.unsetRow_intervals();
-
-    try {
-
-      if(m_startrow != null && m_startrow.length > 0) {
-        interval.setStart_row(new String(m_startrow, "UTF-8"));
-        interval.setStart_rowIsSet(true);
-        interval.setStart_inclusive(false);
-        interval.setStart_inclusiveIsSet(true);
-      }
-
-      if(m_endrow != null && m_endrow.length > 0) {
-        interval.setEnd_row(new String(m_endrow, "UTF-8"));
-        interval.setEnd_rowIsSet(true);
-        interval.setEnd_inclusive(true);
-        interval.setEnd_inclusiveIsSet(true);
-      }
-
-      if (base_spec.isSetRow_intervals()) {
-        for (RowInterval ri : base_spec.getRow_intervals()) {
-          if (ri.isSetStart_row()) {
-            if (m_startrow == null ||
-                ri.getStart_row().compareTo(new String(m_startrow, "UTF-8")) > 0) {
-              interval.setStart_row(ri.getStart_row());
-              interval.setStart_rowIsSet(true);
-              interval.setStart_inclusive( ri.isStart_inclusive() );
-              interval.setStart_inclusiveIsSet(true);
-            }
-          }
-          if (ri.isSetEnd_row()) {
-            if (m_endrow == null || m_endrow.length == 0 ||
-                ri.getEnd_row().compareTo(new String(m_endrow, "UTF-8")) < 0) {
-              interval.setEnd_row(ri.getEnd_row());
-              interval.setEnd_rowIsSet(true);
-              interval.setEnd_inclusive( ri.isEnd_inclusive() );
-              interval.setEnd_inclusiveIsSet(true);
-            }
-          }
-          // Only allowing a single row interval
-          break;
-        }
-      }
-    }
-    catch (UnsupportedEncodingException e) {
-      e.printStackTrace();
-      System.exit(-1);
-    }
-
-    if(interval.isSetStart_row() || interval.isSetEnd_row()) {
-      scan_spec.addToRow_intervals(interval);
-      scan_spec.setRow_intervalsIsSet(true);
-    }
-
-    return scan_spec;
-  }
+					
+//					System.out.println("ri is : "+ri);
+					if( (mStartRow!=null && ri.getEnd_row()!=null && ri.getEnd_row().compareTo(mStartRow)<0)  ||  (mEndRow!=null && !mEndRow.isEmpty() && ri.getStart_row()!=null && ri.getStart_row().compareTo(mEndRow)>0) )	// compare start/end rows
+					{//																		empty endRow = biggest element 					
+						returnEmptyScanspec = true;
+						System.out.println("found mismatching split and rowInterval: ");
+						System.out.println(  (mStartRow!=null && ri.getEnd_row()!=null && ri.getEnd_row().compareTo(mStartRow)<0) ?
+								"rowInterval end-row ("+ri.getEnd_row()+") < split-start-row ("+mStartRow+")" 
+								: "rowInterval start-row ("+ri.getStart_row()+") > split-end-row ("+mEndRow+")");
+					}
+				}
+		    }
+	    } catch (UnsupportedEncodingException e) {
+	    	e.printStackTrace();
+	    }
+	    
+//		 System.out.println("returnEmptyScanspec : "+returnEmptyScanspec);
+	    if(returnEmptyScanspec)
+	    {
+	    	interval.setStart_row("xxx");
+			interval.setStart_rowIsSet(true);
+			interval.setStart_inclusive(true);
+			interval.setStart_inclusiveIsSet(true);
+			
+			interval.setEnd_row("xxx");
+			interval.setEnd_rowIsSet(true);
+			interval.setEnd_inclusive(true);
+			interval.setEnd_inclusiveIsSet(true);
+	    }
+	    else
+	    {
+		    	try 
+		    	{
+		    	if(m_startrow != null && m_startrow.length > 0) {
+						interval.setStart_row(new String(m_startrow, "UTF-8"));
+					interval.setStart_rowIsSet(true);
+					interval.setStart_inclusive(false);
+					interval.setStart_inclusiveIsSet(true);
+				}
+				
+				if(m_endrow != null && m_endrow.length > 0) {
+					interval.setEnd_row(new String(m_endrow,"UTF-8"));
+					interval.setEnd_rowIsSet(true);
+					interval.setEnd_inclusive(true);
+					interval.setEnd_inclusiveIsSet(true);
+				}
+				
+				if (base_spec.isSetRow_intervals()) {
+					for (RowInterval ri : base_spec.getRow_intervals()) {
+						if (ri.isSetStart_row()) {
+							if (m_startrow == null ||
+									ri.getStart_row().compareTo(new String(m_startrow, "UTF-8")) > 0) {
+								interval.setStart_row(ri.getStart_row());
+								interval.setStart_rowIsSet(true);
+								interval.setStart_inclusive( ri.isStart_inclusive() );
+								interval.setStart_inclusiveIsSet(true);
+							}
+						}
+						if (ri.isSetEnd_row()) {
+							if ( m_endrow == null || m_endrow.length == 0 ||
+									ri.getEnd_row().compareTo(new String(m_endrow,"UTF-8")) < 0)  {
+								interval.setEnd_row(ri.getEnd_row());
+								interval.setEnd_rowIsSet(true);
+								interval.setEnd_inclusive( ri.isEnd_inclusive() );
+								interval.setEnd_inclusiveIsSet(true);
+							}
+						}
+						// Only allowing a single row interval
+						break;
+					}
+				}
+		    } catch (UnsupportedEncodingException e) {
+	    		e.printStackTrace();
+	    	}
+	    }
+	    
+	    if(interval.isSetStart_row() || interval.isSetEnd_row()) {
+	    	scan_spec.addToRow_intervals(interval);
+	    	scan_spec.setRow_intervalsIsSet(true);
+	    }
+	    
+	    if(base_spec.isSetRow_regexp()){
+	    	scan_spec.setRow_regexpIsSet(true);
+	    	scan_spec.setRow_regexp(base_spec.getRow_regexp());
+	    }
+	    	
+	    
+	    return scan_spec;
+	  }
+	  */
 
   /**
    * Reads the values of each field.
@@ -213,6 +319,11 @@ implements InputSplit,Comparable<TableSplit> {
     m_startrow = Serialization.readByteArray(in);
     m_endrow = Serialization.readByteArray(in);
     m_hostname = Serialization.toString(Serialization.readByteArray(in));
+    
+    // added by Sagy Drucker
+    m_scanspec = ScanSpec.serializedTextToScanSpec(
+    		Serialization.toString(Serialization.readByteArray(in))
+    		);
   }
 
   /**
@@ -226,6 +337,9 @@ implements InputSplit,Comparable<TableSplit> {
     Serialization.writeByteArray(out, m_startrow);
     Serialization.writeByteArray(out, m_endrow);
     Serialization.writeByteArray(out, Serialization.toBytes(m_hostname));
+    
+    // added by Sagy Drucker
+    Serialization.writeByteArray(out, m_scanspec.toSerializedText().getBytes());
   }
 
   /**
@@ -258,5 +372,13 @@ implements InputSplit,Comparable<TableSplit> {
       Serialization.equals(m_endrow, split.m_endrow) &&
       m_hostname.equals(split.m_hostname);
   }
+
+public ScanSpec getM_scanspec() {
+	return m_scanspec;
+}
+
+public void setM_scanspec(ScanSpec m_scanspec) {
+	this.m_scanspec = m_scanspec;
+}
 
 }

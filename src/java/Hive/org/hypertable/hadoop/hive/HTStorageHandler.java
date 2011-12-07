@@ -1,56 +1,31 @@
-/**
- * Copyright (C) 2010 Sanjit Jhala (Hypertable, Inc.)
- *
- * This file is part of Hypertable.
- *
- * Hypertable is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or any later version.
- *
- * Hypertable is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- */
-
 package org.hypertable.hadoop.hive;
 
-import java.io.IOException;
+
+
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-
-
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.mapred.InputFormat;
-import org.apache.hadoop.mapred.OutputFormat;
-import org.apache.hadoop.util.StringUtils;
-
 import org.apache.hadoop.hive.metastore.HiveMetaHook;
 import org.apache.hadoop.hive.metastore.MetaStoreUtils;
 import org.apache.hadoop.hive.metastore.api.Constants;
 import org.apache.hadoop.hive.metastore.api.MetaException;
-import org.apache.hadoop.hive.metastore.api.Partition;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.ql.metadata.HiveStorageHandler;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.serde2.SerDe;
-
+import org.apache.hadoop.mapred.InputFormat;
+import org.apache.hadoop.mapred.OutputFormat;
+import org.apache.hadoop.util.StringUtils;
+import org.hypertable.hadoop.hive.HTSerDe;
+import org.hypertable.hadoop.hive.HiveHTOutputFormat;
 import org.hypertable.hadoop.mapred.RowOutputFormat;
-import org.hypertable.hadoop.mapred.RowInputFormat;
-import org.hypertable.thriftgen.*;
 import org.hypertable.thrift.ThriftClient;
+import org.hypertable.thriftgen.Schema;
 
 /**
  * StorageHandler provides a HiveStorageHandler implementation for
@@ -58,6 +33,7 @@ import org.hypertable.thrift.ThriftClient;
  */
 public class HTStorageHandler
   implements HiveStorageHandler, HiveMetaHook {
+//  implements HiveStorageHandler, HiveMetaHook,HiveStoragePredicateHandler {
 
   private long mNamespaceId=0;
   private ThriftClient mClient=null;
@@ -149,8 +125,9 @@ public class HTStorageHandler
       Set<String> uniqueColumnFamilies = new HashSet<String>(htColumnFamilies);
       uniqueColumnFamilies.remove(htColumnFamilies.get(iKey));
       if (mClient == null) {
-        //TODO: read values from configs
+    	System.out.println("initializing Thrift-Client-Buffered:");
         mClient = ThriftClient.create("localhost", 38080);
+        System.out.println("Thrift-Client-Buffered connected!");
         mNamespaceId = mClient.open_namespace(namespace);
       }
       // TODO: support managed tables
@@ -211,6 +188,7 @@ public class HTStorageHandler
 
   @Override
   public Class<? extends InputFormat> getInputFormatClass() {
+	  System.out.println("getInputFormatClass = HiveHTInputFormat.class");
     return HiveHTInputFormat.class;
   }
 
@@ -268,4 +246,11 @@ public class HTStorageHandler
 
     jobProperties.put(RowOutputFormat.TABLE, tableName);
   }
+  
+//  @Override
+//  public DecomposedPredicate decomposePredicate(JobConf arg0, Deserializer arg1,
+//  		ExprNodeDesc arg2) {
+//  	System.out.println("Inside predicate:"+arg2);
+//  	return null;
+//  }
 }

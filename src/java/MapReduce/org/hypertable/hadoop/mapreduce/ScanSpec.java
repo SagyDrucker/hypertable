@@ -32,6 +32,7 @@ import java.io.UnsupportedEncodingException;
 
 import java.util.ArrayList;
 
+import org.apache.hadoop.hive.metastore.parser.ExpressionTree.LogicalOperator;
 import org.hypertable.hadoop.util.Base64;
 import org.hypertable.hadoop.util.Serialization;
 
@@ -148,6 +149,16 @@ public class ScanSpec extends org.hypertable.thriftgen.ScanSpec {
     if (isset) {
       setEnd_timeIsSet(true);
       keys_only = in.readBoolean();
+    }
+    
+    
+    /** row regex **/
+    isset = in.readBoolean();
+    System.out.println("reading regex from stream:"+isset);
+    if (isset) {
+    	System.out.println("reading regex from stream");
+    	setRow_regexpIsSet(true);
+    	row_regexp = new String(Serialization.readByteArray(in), "UTF-8");
     }
   }
 
@@ -268,6 +279,17 @@ public class ScanSpec extends org.hypertable.thriftgen.ScanSpec {
       }
       else
         out.writeBoolean(false);
+      
+      /** row regex **/
+      System.out.println("writing regex to stream before");
+      if (isSetRow_regexp()) {
+    	 System.out.println("writing regex to stream");
+        out.writeBoolean(true);
+        Serialization.writeByteArray(out, row_regexp.getBytes("UTF-8"));
+      }
+      else
+        out.writeBoolean(false);
+      
     }
     catch (UnsupportedEncodingException e) {
       e.printStackTrace();
@@ -304,4 +326,10 @@ public class ScanSpec extends org.hypertable.thriftgen.ScanSpec {
     }
     return scan_spec;
   }
+  
+  @Override
+	public void addToRow_intervals(RowInterval elem) {
+	  System.out.println("adding row interval to scanspec " + elem);
+		super.addToRow_intervals(elem);
+	}
 }

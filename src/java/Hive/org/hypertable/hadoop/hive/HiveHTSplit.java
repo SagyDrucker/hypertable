@@ -24,11 +24,10 @@ package org.hypertable.hadoop.hive;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileSplit;
-
 import org.apache.hadoop.mapred.InputSplit;
-
 import org.hypertable.hadoop.mapred.TableSplit;
 
 /**
@@ -42,6 +41,7 @@ public class HiveHTSplit extends FileSplit implements InputSplit {
     super((Path) null, 0, 0, (String[]) null);
     htColumnMapping = "";
     split = new TableSplit();
+
   }
 
   public HiveHTSplit(TableSplit split, String columnsMapping, Path dummyPath) {
@@ -51,7 +51,7 @@ public class HiveHTSplit extends FileSplit implements InputSplit {
   }
 
   public TableSplit getSplit() {
-    return this.split;
+	  return this.split;
   }
 
   public String getColumnsMapping() {
